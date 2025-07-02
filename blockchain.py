@@ -3,7 +3,7 @@ import json
 
 from time import time
 from uuid import uuid4
-from textwrap import dedent
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
 
@@ -12,6 +12,7 @@ class Blockchain(object):
     def __init__(self):
         self.chain = []
         self.current_transactions = []
+        self.nodes = set()
 
         # Create the genesis block
         self.new_block(previous_hash=1, proof=100)
@@ -26,7 +27,7 @@ class Blockchain(object):
         block = {
             "index": len(self.chain) + 1,
             "timestamp": time(),
-            "transaction": self.current_transactions,
+            "transactions": self.current_transactions,
             "proof": proof,
             "previous_hash": previous_hash or self.hash(self.chain[-1]),
         }
@@ -46,13 +47,13 @@ class Blockchain(object):
         :return: <int> The index of the Block that will hold this transaction
         """
 
-        self.current_transaction.append({
+        self.current_transactions.append({
             "sender": sender,
             "recipient": recipient,
             "amount": amount,
         })
 
-        return self.last_block['index'] + 1
+        return self.last_block["index"] + 1
 
     @property
     def last_block(self):
@@ -69,7 +70,7 @@ class Blockchain(object):
 
         # We must make sure that the Dictionary is ordered
         # or we'll have inconsistent hashes
-        block_string = json.dump(block, sort_keys=True).encode()
+        block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
     def proof_of_work(self, last_proof):
@@ -101,12 +102,21 @@ class Blockchain(object):
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:4] == "0000"
 
+    def register_node(self, address):
+        """Add a new node to the list of nodes
+        :param address: <str> Address of node. E.g. 'http://192.168.0.5:5000'
+        :return: None
+        """
+
+        parsed_url = urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+
 
 # Instantiate our Node
 app = Flask(__name__)
 
 # Generate a globally unique address for this node
-node_identifier = str(uuid4().replace('-', ''))
+node_identifier = str(uuid4()).replace('-', '')
 
 # Instantiate the Blockchain
 blockchain = Blockchain()
@@ -141,9 +151,10 @@ def mine():
 
     return jsonify(response), 200
 
+
 @app.route("/transactions/new", methods=["POST"])
 def new_transaction():
-    values = request.get_json()
+    values = request.args
 
     # Check that the required fields are in the POST'ed data
     required = ["sender", "recipient", "amount"]
